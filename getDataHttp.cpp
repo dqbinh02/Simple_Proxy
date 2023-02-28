@@ -8,8 +8,37 @@
 
 using namespace std;
 
+// A function to parse the URL and extract the server and path
+void parse_url(string url, string& server, string& path)
+{
+    // Check if the URL contains "http://" and remove it if it does
+    if (url.find("http://") != string::npos) {
+        url = url.substr(7);
+    }
+
+    // Find the position of the first slash after the host name
+    size_t slash_pos = url.find('/');
+
+    // If no slash is found, the entire URL corresponds to the server name
+    if (slash_pos == string::npos) {
+        server = url;
+        path = "/";
+    }
+    // Otherwise, the server name is the substring before the slash, and the path is the substring after the slash
+    else {
+        server = url.substr(0, slash_pos);
+        path = url.substr(slash_pos);
+    }
+}
+
 int main(int argc, char *argv[])
 {
+
+    // Parse the URL and extract the server and path
+    string url = argv[1];
+    string server, path;
+    parse_url(url, server, path);
+    
     // Create a TCP socket
     int sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd == -1) {
@@ -17,24 +46,12 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // pairs server address 
-    string url_server = argv[1];
-    if (url_server.find("http://") != -1){
-        url_server = url_server.substr(7, url_server.length()-7); //length of "http://" is 7
-    }
-    string url_path = "/";
-    size_t index_path = url_server.find("/");
-    if (index_path != -1){
-        url_path += url_server.substr(index_path + 1,url_server.length()-index_path);
-        url_server = url_server.substr(0,index_path);
-    }
-
     // Get server address info
     struct addrinfo hints, *servinfo;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
-    getaddrinfo(url_server.c_str(), "http", &hints, &servinfo);
+    getaddrinfo(server.c_str(), "http", &hints, &servinfo);
 
     // Connect to server
     int res = connect(sockfd, servinfo->ai_addr, servinfo->ai_addrlen);
@@ -43,7 +60,7 @@ int main(int argc, char *argv[])
         return 1;
     }
     // Send HTTP GET request
-    string request = "GET " + url_path +" HTTP/1.1\r\nHost: " + url_server + "\r\n\r\n";
+    string request = "GET " + path +" HTTP/1.1\r\nHost: " + server + "\r\n\r\n";
     send(sockfd, request.c_str(), request.length(), 0);
 
     // Receive HTTP response
@@ -142,21 +159,24 @@ int main(int argc, char *argv[])
         }
     } while (1);
 
-    if (url_path == "/"){
-        ofstream file1(url_server+"_index.html");
-        if (file1.is_open()){
-        file1 << data;
-        file1.close();
-        }
-        else cout << "Don't success";
+    // write data to file
+    ofstream output_file;
+    if (path == "/"){
+        output_file.open(server+"_index.html");
     } else {
-        ofstream file2(argv[2]);
-        if (file2.is_open()){
-            file2 << data;
-            file2.close();
-        } else cout << "Don't success";
+        output_file.open(argv[2]);
     }
+
+    if (output_file.fail()) {
+        cerr << "Failed to open output file." << endl;
+        return 1;
+    }   
+    output_file << data;
+    output_file.close();
     
+    // close socket
+    close(sockfd);
+
     return 0;
 }
 
