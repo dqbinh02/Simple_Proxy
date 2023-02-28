@@ -4,9 +4,9 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <unistd.h>
+#include <fstream>
 
 using namespace std;
-
 
 int main(int argc, char *argv[])
 {
@@ -52,6 +52,11 @@ int main(int argc, char *argv[])
     string response = "", data = "";
     char data_tranfer_method = 0; // 0 : Unknown; 1 : Transfer-Encoding: chunked; 2 : Content-length
     size_t length_data = 0;
+
+
+    string chunked = "";
+    int length_chunked = -1;
+
     do {
         bytes_received = recv(sockfd, buffer, 1024, 0);
         if (bytes_received == -1) {
@@ -63,8 +68,26 @@ int main(int argc, char *argv[])
             data += string(buffer, bytes_received);
             if (data.length() == length_data) break;
         }
-        else if (data_tranfer_method == 1){ 
-            if (response.substr(response.length() - 5, 5) == "0\r\n\r\n") break;
+        else if (data_tranfer_method == 1)
+        {
+            chunked += string(buffer,bytes_received);
+            while (chunked.length() >= length_chunked + 2){
+                if (length_chunked == -1)
+                {
+                    size_t index_data = chunked.find("\r\n"); 
+                    if (index_data ==-1) continue; // continue receive
+                    length_chunked = static_cast<int>(stoul(chunked.substr(0,index_data),nullptr, 16));
+                    chunked = chunked.substr(index_data+2, chunked.length());
+                }
+                else if (length_chunked == 0) break;
+                else 
+                {
+                    data += chunked.substr(0,length_chunked + 2);
+                    chunked = chunked.substr(length_chunked + 2,chunked.length());
+                    length_chunked = -1;    
+                }   
+            }
+            if (length_chunked == 0) break;
         }
         else {
             // check transfer data by content length
@@ -103,87 +126,37 @@ int main(int argc, char *argv[])
             // check transfer data by encoding chunked
             if ( response.find("Transfer-Encoding: chunked") != -1){
                 data_tranfer_method = 1;
+                // receive until have first chunked
+                size_t index_chunked = response.find("\r\n\r\n");
+                while (index_chunked == -1){
+                    bytes_received = recv(sockfd, buffer, 1024, 0);
+                    if (bytes_received == -1) {
+                        cerr << "Error receiving date." << endl;
+                        return 1;
+                    }
+                    response += string(buffer, bytes_received);
+                    index_chunked = response.find("\r\n\r\n");
+                }
+                chunked = response.substr(index_chunked + 4, response.length());
             }
         }
     } while (1);
-    // if Transfer-Encoding: chunked
-    if (data_tranfer_method==1){
-        data = response.substr(response.find("\r\n\r\n")+4,response.length());
+
+    if (url_path == "/"){
+        ofstream file1(url_server+"_index.html");
+        if (file1.is_open()){
+        file1 << data;
+        file1.close();
+        }
+        else cout << "Don't success";
+    } else {
+        ofstream file2(argv[2]);
+        if (file2.is_open()){
+            file2 << data;
+            file2.close();
+        } else cout << "Don't success";
     }
-
     
-
-    cout << data;
-
     return 0;
-
-    // //Receive HTTP response
-    // char buffer[1024];
-    // string response = "";
-    // int bytes_received;
-	// string data;
-    // char data_transfer_method;
-
-
-    // // for content-lenght 
-    // size_t indexData;
-    // size_t lentData;
-
-    // do {
-    //     bytes_received = recv(sockfd, buffer, 1024, 0);
-    //     if (bytes_received == -1) {
-    //         cerr << "Error receiving data." << endl;
-    //         return 1;
-    //     }
-    //     response += string(buffer, bytes_received);
-
-		
-    //     if (data_transfer_method == 1){
-    //         data += string(buffer, bytes_received);    
-	// 	    if (data.length() == lentData) break;
-    //     }
-    //     else if (data_transfer_method == 2){
-    //         if (string(buffer,bytes_received) == "0\r\n\r\n") break;
-    //         indexData = string(buffer,bytes_received).find("\r\n");
-    //         indexData += 2;
-    //         data += string(buffer,bytes_received).substr(indexData,bytes_received);
-    //     }
-    //     else {
-    //         size_t indexLentData = response.find("Content-Length: ");
-    //         if (indexLentData!=-1){
-
-	// 	        indexLentData = indexLentData + 16;
-	// 	        size_t i = response.substr(indexLentData,response.length()).find("\r\n");
-    //             if (i != -1){
-    //                 data_transfer_method = 1;
-    //                 while (response[i] != '\r') i++;	
-	// 	            lentData = stoi(response.substr(indexLentData,indexLentData+i));
-		        
-    //                 indexData = response.find("\n\r") + 3;
-	// 	            data = response.substr(indexData, response.length());
-	// 	            if (data.length() == lentData) break;
-    //             }
-    //             continue;
-    //         }
-    //         if (response.find("Transfer-Encoding: chunked") != -1){
-    //             data_transfer_method = 2;
-    //             size_t indexChunked = response.find("\n\r") + 3;
-    //             if (response[indexChunked] == '0') break;  
-    //             indexData = response.substr(indexChunked,response.length()).find("\r\n") + 2;
-    //             data = response.substr(indexData,response.length());
-    //         }
-    //     }
-    // } while (bytes_received > 0);
-
-
-
-    // // Display HTTP response
-    // cout << data;
-
-    // // Close socket
-    // close(sockfd);
-
-
-    // return 0;
 }
 
